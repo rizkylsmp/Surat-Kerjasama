@@ -44,6 +44,11 @@ app.use((error, _req, res, _next) => {
     return;
   }
 
+  if (Number.isInteger(error.status) && error.status >= 400 && error.status < 600) {
+    res.status(error.status).json({ message: error.message || "Permintaan gagal diproses" });
+    return;
+  }
+
   res.status(500).json({ message: "Terjadi kesalahan server" });
 });
 
