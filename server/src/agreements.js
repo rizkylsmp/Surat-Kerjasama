@@ -214,6 +214,7 @@ agreementsRouter.post("/:id/digital-signature", async (req, res, next) => {
     }
 
     const payload = imageUploadSchema.parse(req.body);
+    const oldPublicId = agreement.signatureCloudinaryPublicId;
     const upload = await uploadDataImageToCloudinary(
       payload.imageData,
       "signatures",
@@ -231,6 +232,16 @@ agreementsRouter.post("/:id/digital-signature", async (req, res, next) => {
       [upload.secureUrl, upload.publicId, req.params.id]
     );
     await insertEvent(req.params.id, "cloudinary", "signature_image_saved", upload.publicId, upload);
+    if (oldPublicId && oldPublicId !== upload.publicId) {
+      try {
+        const result = await destroyCloudinaryImage(oldPublicId);
+        await insertEvent(req.params.id, "cloudinary", "signature_image_replaced", oldPublicId, result);
+      } catch (deleteError) {
+        await insertEvent(req.params.id, "cloudinary", "signature_replace_cleanup_failed", oldPublicId, {
+          message: deleteError.message
+        });
+      }
+    }
 
     res.json({ agreement: await getAgreement(req.params.id), imageUrl: upload.secureUrl, upload });
   } catch (error) {
@@ -252,6 +263,7 @@ agreementsRouter.post("/:id/face-capture", async (req, res, next) => {
       return;
     }
 
+    const oldPublicId = agreement.faceCloudinaryPublicId;
     const upload = await uploadDataImageToCloudinary(
       payload.imageData,
       "faces",
@@ -274,6 +286,16 @@ agreementsRouter.post("/:id/face-capture", async (req, res, next) => {
       ...upload,
       captureNote: payload.captureNote || null
     });
+    if (oldPublicId && oldPublicId !== upload.publicId) {
+      try {
+        const result = await destroyCloudinaryImage(oldPublicId);
+        await insertEvent(req.params.id, "cloudinary", "face_image_replaced", oldPublicId, result);
+      } catch (deleteError) {
+        await insertEvent(req.params.id, "cloudinary", "face_replace_cleanup_failed", oldPublicId, {
+          message: deleteError.message
+        });
+      }
+    }
 
     res.json({ agreement: await getAgreement(req.params.id), imageUrl: upload.secureUrl, upload });
   } catch (error) {

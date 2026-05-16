@@ -237,6 +237,7 @@ function SignaturePad({
   pendingSignature,
   onPendingSignature,
   setStatus,
+  readyMessage = "Tanda tangan siap. Tekan Submit untuk menyimpan ke database.",
 }) {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -283,7 +284,7 @@ function SignaturePad({
   const saveLocal = () => {
     const imageData = canvasRef.current.toDataURL("image/png");
     onPendingSignature(imageData);
-    setStatus("Tanda tangan siap. Tekan Submit untuk menyimpan ke database.");
+    setStatus(readyMessage);
   };
 
   const displayedSignature =
@@ -340,7 +341,13 @@ function SignaturePad({
   );
 }
 
-function FaceCapture({ form, pendingFace, onPendingFace, setStatus }) {
+function FaceCapture({
+  form,
+  pendingFace,
+  onPendingFace,
+  setStatus,
+  readyMessage = "Foto wajah siap. Tekan Submit untuk menyimpan ke database.",
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -390,7 +397,7 @@ function FaceCapture({ form, pendingFace, onPendingFace, setStatus }) {
       consent,
       captureNote: "Captured inside browser face frame",
     });
-    setStatus("Foto wajah siap. Tekan Submit untuk menyimpan ke database.");
+    setStatus(readyMessage);
   };
 
   const displayedFace = pendingFace?.imageData || assetUrl(form.faceImageUrl);
@@ -838,6 +845,7 @@ function AdminPage({
   deleteAgreement,
   reviewChangeRequest,
   logoutAdmin,
+  setStatus,
 }) {
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -895,6 +903,7 @@ function AdminPage({
             setSearch={setSearch}
             loadAgreements={loadAdminData}
             deleteAgreement={deleteAgreement}
+            setStatus={setStatus}
           />
         )}
         {adminTab === "changes" && (
@@ -1025,6 +1034,7 @@ function AdminArchivePage({
   setSearch,
   loadAgreements,
   deleteAgreement,
+  setStatus,
 }) {
   const [openedAgreement, setOpenedAgreement] = useState(null);
 
@@ -1043,6 +1053,11 @@ function AdminArchivePage({
           const deleted = await deleteAgreement(openedAgreement.id);
           if (deleted) setOpenedAgreement(null);
         }}
+        onSaved={async (updatedAgreement) => {
+          setOpenedAgreement(updatedAgreement);
+          await loadAgreements(search);
+        }}
+        setStatus={setStatus}
       />
     );
   }
@@ -1128,7 +1143,91 @@ function AdminArchivePage({
   );
 }
 
-function ArchiveAgreementDetail({ agreement, onBack, onDelete }) {
+function ArchiveAgreementDetail({
+  agreement,
+  onBack,
+  onDelete,
+  onSaved,
+  setStatus,
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(() => ({ ...agreement }));
+  const [pendingSignature, setPendingSignature] = useState("");
+  const [pendingFace, setPendingFace] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft({ ...agreement });
+    setPendingSignature("");
+    setPendingFace(null);
+    setIsEditing(false);
+  }, [agreement]);
+
+  const canSave =
+    draft.workerName &&
+    draft.workerBirthPlace &&
+    draft.workerAddress &&
+    draft.workerKtp &&
+    draft.workerPhone &&
+    draft.jobSection;
+
+  const updateDraft = (name, value) => {
+    setDraft((current) => ({ ...current, [name]: value }));
+  };
+
+  const cancelEdit = () => {
+    setDraft({ ...agreement });
+    setPendingSignature("");
+    setPendingFace(null);
+    setIsEditing(false);
+    setStatus("");
+  };
+
+  const saveEdit = async () => {
+    if (!canSave) {
+      setStatus("Lengkapi data pekerja dan bagian pekerjaan sebelum menyimpan perubahan.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const agreementDate = draft.agreementDate || agreement.agreementDate || today();
+      let saved = await api.updateAgreement(agreement.id, {
+        ...draft,
+        agreementDate,
+        agreementDay: formatWeekday(agreementDate),
+        agreementPlace: "PASURUAN",
+        ...companyDefaults,
+        dailyWage: Number(draft.dailyWage || 0),
+        wagePaymentPolicy: "harian",
+        signatureCity: "Pasuruan",
+        signatureDate: draft.signatureDate || agreementDate,
+        notes: "",
+      });
+
+      if (pendingSignature) {
+        const result = await api.saveDigitalSignature(saved.id, pendingSignature);
+        saved = result.agreement;
+      }
+
+      if (pendingFace) {
+        const result = await api.saveFaceCapture(saved.id, pendingFace);
+        saved = result.agreement;
+      }
+
+      setPendingSignature("");
+      setPendingFace(null);
+      setDraft({ ...saved });
+      setIsEditing(false);
+      await onSaved(saved);
+      setStatus("Perubahan arsip berhasil disimpan.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <main className="mx-auto max-w-6xl space-y-5 px-5 py-5">
       <section className="official-panel rounded-lg border border-line bg-white p-5 shadow-sm">
@@ -1148,6 +1247,40 @@ function ArchiveAgreementDetail({ agreement, onBack, onDelete }) {
               <X size={16} />
               Kembali
             </button>
+            {isEditing ? (
+              <>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={cancelEdit}
+                  disabled={isSaving}
+                >
+                  Batal Edit
+                </button>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={saveEdit}
+                  disabled={!canSave || isSaving}
+                >
+                  {isSaving ? (
+                    <Loader2 className="animate-spin" size={16} />
+                  ) : (
+                    <Save size={16} />
+                  )}
+                  Simpan Perubahan
+                </button>
+              </>
+            ) : (
+              <button
+                className="btn-primary"
+                type="button"
+                onClick={() => setIsEditing(true)}
+              >
+                <RefreshCcw size={16} />
+                Edit
+              </button>
+            )}
             <button className="btn-secondary" type="button" onClick={onDelete}>
               <Trash2 size={16} />
               Hapus
@@ -1159,19 +1292,106 @@ function ArchiveAgreementDetail({ agreement, onBack, onDelete }) {
       <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
         <section className="min-w-0 overflow-auto rounded-lg border border-line bg-slate-200/70 p-5">
           <DocumentPreview
-            data={agreement}
-            pendingSignature=""
-            pendingFace={null}
+            data={isEditing ? draft : agreement}
+            pendingSignature={pendingSignature}
+            pendingFace={pendingFace}
           />
           <PrintPanel />
         </section>
 
         <aside className="space-y-5">
-          <ArchiveVerificationCard agreement={agreement} />
-          <ArchiveCompletenessCard agreement={agreement} />
+          {isEditing ? (
+            <ArchiveEditPanel
+              draft={draft}
+              pendingSignature={pendingSignature}
+              pendingFace={pendingFace}
+              updateDraft={updateDraft}
+              setPendingSignature={setPendingSignature}
+              setPendingFace={setPendingFace}
+              setStatus={setStatus}
+            />
+          ) : (
+            <>
+              <ArchiveVerificationCard agreement={agreement} />
+              <ArchiveCompletenessCard agreement={agreement} />
+            </>
+          )}
         </aside>
       </div>
     </main>
+  );
+}
+
+function ArchiveEditPanel({
+  draft,
+  pendingSignature,
+  pendingFace,
+  updateDraft,
+  setPendingSignature,
+  setPendingFace,
+  setStatus,
+}) {
+  return (
+    <div className="space-y-5">
+      <section className="official-panel rounded-lg border border-line bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold text-ink">Edit Data Arsip</h2>
+          <span className="rounded-md bg-gold/10 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-gold">
+            Admin
+          </span>
+        </div>
+        <div className="grid gap-3 text-sm text-slate-600">
+          <InfoTile
+            label="Tanggal perjanjian"
+            value={formatDateLong(draft.agreementDate)}
+          />
+          <InfoTile label="Tempat dibuat" value="PASURUAN" />
+          <InfoTile label="Perusahaan" value={companyDefaults.companyName} />
+        </div>
+      </section>
+
+      {fieldGroups.map((group) => {
+        const Icon = group.icon;
+        return (
+          <section
+            key={group.title}
+            className="official-panel rounded-lg border border-line bg-white p-4 shadow-sm"
+          >
+            <div className="mb-4 flex items-center gap-2">
+              <span className="grid h-8 w-8 place-items-center rounded-md bg-navy/10 text-navy">
+                <Icon size={17} />
+              </span>
+              <h2 className="text-sm font-bold text-ink">{group.title}</h2>
+            </div>
+            <div className="grid gap-3">
+              {group.fields.map((field) => (
+                <Field
+                  key={field.name}
+                  field={field}
+                  value={draft[field.name]}
+                  onChange={updateDraft}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+
+      <SignaturePad
+        form={draft}
+        pendingSignature={pendingSignature}
+        onPendingSignature={setPendingSignature}
+        setStatus={setStatus}
+        readyMessage="Tanda tangan baru siap. Klik Simpan Perubahan untuk menyimpan arsip."
+      />
+      <FaceCapture
+        form={draft}
+        pendingFace={pendingFace}
+        onPendingFace={setPendingFace}
+        setStatus={setStatus}
+        readyMessage="Foto wajah baru siap. Klik Simpan Perubahan untuk menyimpan arsip."
+      />
+    </div>
   );
 }
 
@@ -1566,6 +1786,7 @@ export default function App() {
           deleteAgreement={deleteAgreement}
           reviewChangeRequest={reviewChangeRequest}
           logoutAdmin={logoutAdmin}
+          setStatus={setStatus}
         />
       ) : page === "change-request" ? (
         <ChangeRequestPage setPage={setPage} setStatus={setStatus} />
