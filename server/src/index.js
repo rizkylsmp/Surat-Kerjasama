@@ -1,7 +1,5 @@
 import cors from "cors";
 import express from "express";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import morgan from "morgan";
 import { ZodError } from "zod";
 import { agreementsRouter } from "./agreements.js";
@@ -10,13 +8,11 @@ import { changeRequestsRouter } from "./changeRequests.js";
 import { config } from "./config.js";
 
 const app = express();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadsPath = path.resolve(__dirname, "../uploads");
 
+app.set("trust proxy", 1);
 app.use(cors({ origin: config.clientOrigins, credentials: true }));
 app.use(express.json({ limit: "12mb" }));
 app.use(morgan("dev"));
-app.use("/uploads", express.static(uploadsPath));
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "surat-kerjasama-api" });
@@ -51,6 +47,10 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ message: "Terjadi kesalahan server" });
 });
 
-app.listen(config.port, () => {
-  console.log(`API berjalan di http://localhost:${config.port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(config.port, () => {
+    console.log(`API berjalan di http://localhost:${config.port}`);
+  });
+}
+
+export default app;

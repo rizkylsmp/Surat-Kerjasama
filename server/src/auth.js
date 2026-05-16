@@ -1,5 +1,6 @@
 import express from "express";
 import { z } from "zod";
+import { config } from "./config.js";
 import { pool } from "./db.js";
 import { createSessionToken, hashToken, verifyPassword } from "./passwords.js";
 
@@ -24,13 +25,19 @@ function parseCookies(header = "") {
 }
 
 function sessionCookie(token, maxAgeSeconds) {
-  return [
+  const attributes = [
     `admin_session=${encodeURIComponent(token)}`,
     "HttpOnly",
-    "SameSite=Lax",
+    `SameSite=${config.auth.cookieSameSite}`,
     "Path=/",
     `Max-Age=${maxAgeSeconds}`
-  ].join("; ");
+  ];
+
+  if (config.auth.cookieSecure) {
+    attributes.push("Secure");
+  }
+
+  return attributes.join("; ");
 }
 
 export async function requireAdmin(req, res, next) {

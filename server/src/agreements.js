@@ -1,15 +1,11 @@
 import express from "express";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { pool } from "./db.js";
 import { getEsignProvider } from "./esignProvider.js";
 import { agreementSchema, imageUploadSchema } from "./validators.js";
 import { requireAdmin } from "./auth.js";
+import { destroyCloudinaryImage, uploadDataImageToCloudinary } from "./cloudinary.js";
 
 export const agreementsRouter = express.Router();
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadsRoot = path.resolve(__dirname, "../uploads");
 
 const columns = `
   id,
@@ -39,10 +35,12 @@ const columns = `
   e_signature_certificate_serial AS eSignatureCertificateSerial,
   e_signature_verified_at AS eSignatureVerifiedAt,
   signature_image_url AS signatureImageUrl,
+  signature_cloudinary_public_id AS signatureCloudinaryPublicId,
   face_verification_status AS faceVerificationStatus,
   face_verification_request_id AS faceVerificationRequestId,
   face_liveness_score AS faceLivenessScore,
   face_image_url AS faceImageUrl,
+  face_cloudinary_public_id AS faceCloudinaryPublicId,
   face_verified_at AS faceVerifiedAt,
   audit_trail_json AS auditTrail,
   notes,
@@ -67,22 +65,6 @@ function normalizeAgreement(data) {
     companyPosition: "Direktur (pemilik badan/CV)",
     signatureCity: "Pasuruan"
   };
-}
-
-async function saveDataImage(imageData, folder, filePrefix) {
-  const match = imageData.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/);
-  if (!match) {
-    const error = new Error("Format gambar tidak valid");
-    error.status = 422;
-    throw error;
-  }
-
-  const extension = match[1] === "jpeg" ? "jpg" : match[1];
-  const directory = path.join(uploadsRoot, folder);
-  await fs.mkdir(directory, { recursive: true });
-  const filename = `${filePrefix}-${Date.now()}.${extension}`;
-  await fs.writeFile(path.join(directory, filename), Buffer.from(match[2], "base64"));
-  return `/uploads/${folder}/${filename}`;
 }
 
 const toDbValues = (rawData) => {
@@ -232,20 +214,25 @@ agreementsRouter.post("/:id/digital-signature", async (req, res, next) => {
     }
 
     const payload = imageUploadSchema.parse(req.body);
-    const imageUrl = await saveDataImage(payload.imageData, "signatures", `agreement-${req.params.id}-signature`);
+    const upload = await uploadDataImageToCloudinary(
+      payload.imageData,
+      "signatures",
+      `agreement-${req.params.id}-signature-${Date.now()}`
+    );
 
     await pool.query(
       `UPDATE agreements SET
         e_signature_provider = 'image',
         e_signature_status = 'signed',
         signature_image_url = ?,
+        signature_cloudinary_public_id = ?,
         e_signature_verified_at = NOW()
       WHERE id = ?`,
-      [imageUrl, req.params.id]
+      [upload.secureUrl, upload.publicId, req.params.id]
     );
-    await insertEvent(req.params.id, "image", "signature_image_saved", null, { imageUrl });
+    await insertEvent(req.params.id, "cloudinary", "signature_image_saved", upload.publicId, upload);
 
-    res.json({ agreement: await getAgreement(req.params.id), imageUrl });
+    res.json({ agreement: await getAgreement(req.params.id), imageUrl: upload.secureUrl, upload });
   } catch (error) {
     next(error);
   }
@@ -265,7 +252,11 @@ agreementsRouter.post("/:id/face-capture", async (req, res, next) => {
       return;
     }
 
-    const imageUrl = await saveDataImage(payload.imageData, "faces", `agreement-${req.params.id}-face`);
+    const upload = await uploadDataImageToCloudinary(
+      payload.imageData,
+      "faces",
+      `agreement-${req.params.id}-face-${Date.now()}`
+    );
     const reference = `face_capture_${req.params.id}_${Date.now()}`;
 
     await pool.query(
@@ -274,16 +265,17 @@ agreementsRouter.post("/:id/face-capture", async (req, res, next) => {
         face_verification_request_id = ?,
         face_liveness_score = NULL,
         face_image_url = ?,
+        face_cloudinary_public_id = ?,
         face_verified_at = NOW()
       WHERE id = ?`,
-      [reference, imageUrl, req.params.id]
+      [reference, upload.secureUrl, upload.publicId, req.params.id]
     );
-    await insertEvent(req.params.id, "local-camera", "face_captured", reference, {
-      imageUrl,
+    await insertEvent(req.params.id, "cloudinary", "face_captured", reference, {
+      ...upload,
       captureNote: payload.captureNote || null
     });
 
-    res.json({ agreement: await getAgreement(req.params.id), imageUrl });
+    res.json({ agreement: await getAgreement(req.params.id), imageUrl: upload.secureUrl, upload });
   } catch (error) {
     next(error);
   }
@@ -291,6 +283,29 @@ agreementsRouter.post("/:id/face-capture", async (req, res, next) => {
 
 agreementsRouter.delete("/:id", requireAdmin, async (req, res, next) => {
   try {
+    const agreement = await getAgreement(req.params.id);
+    if (!agreement) {
+      res.status(404).json({ message: "Perjanjian tidak ditemukan" });
+      return;
+    }
+
+    const cloudinaryDeletes = [
+      agreement.signatureCloudinaryPublicId,
+      agreement.faceCloudinaryPublicId
+    ].filter(Boolean);
+
+    for (const publicId of cloudinaryDeletes) {
+      try {
+        const result = await destroyCloudinaryImage(publicId);
+        await insertEvent(req.params.id, "cloudinary", "asset_deleted", publicId, result);
+      } catch (error) {
+        await insertEvent(req.params.id, "cloudinary", "asset_delete_failed", publicId, {
+          message: error.message
+        });
+        throw error;
+      }
+    }
+
     const [result] = await pool.query("DELETE FROM agreements WHERE id = ?", [req.params.id]);
     if (!result.affectedRows) {
       res.status(404).json({ message: "Perjanjian tidak ditemukan" });

@@ -25,6 +25,15 @@ export const config = {
   auth: {
     sessionSecret: process.env.SESSION_SECRET || "dev-session-secret-change-me",
     adminUsername: process.env.ADMIN_USERNAME || "",
-    adminPassword: process.env.ADMIN_PASSWORD || ""
+    adminPassword: process.env.ADMIN_PASSWORD || "",
+    cookieSameSite: process.env.COOKIE_SAMESITE || (process.env.VERCEL ? "None" : "Lax"),
+    cookieSecure:
+      process.env.COOKIE_SECURE === "true" || (!process.env.COOKIE_SECURE && Boolean(process.env.VERCEL))
+  },
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || "",
+    apiKey: process.env.CLOUDINARY_API_KEY || "",
+    apiSecret: process.env.CLOUDINARY_API_SECRET || "",
+    uploadFolder: process.env.CLOUDINARY_UPLOAD_FOLDER || "surat-kerjasama"
   }
 };

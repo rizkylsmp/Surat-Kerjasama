@@ -31,10 +31,12 @@ const requiredAgreementColumns = [
   ["e_signature_certificate_serial", "VARCHAR(160) NULL"],
   ["e_signature_verified_at", "DATETIME NULL"],
   ["signature_image_url", "TEXT NULL"],
+  ["signature_cloudinary_public_id", "VARCHAR(255) NULL"],
   ["face_verification_status", "VARCHAR(40) NOT NULL DEFAULT 'not_started'"],
   ["face_verification_request_id", "VARCHAR(120) NULL"],
   ["face_liveness_score", "DECIMAL(5,2) NULL"],
   ["face_image_url", "TEXT NULL"],
+  ["face_cloudinary_public_id", "VARCHAR(255) NULL"],
   ["face_verified_at", "DATETIME NULL"],
   ["audit_trail_json", "JSON NULL"]
 ];
