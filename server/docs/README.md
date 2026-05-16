@@ -79,8 +79,16 @@ Deploy sebagai dua project Vercel:
 Environment `client`:
 
 ```bash
-VITE_API_BASE_URL=https://url-server-vercel.vercel.app/api
+VITE_API_BASE_URL=/api
 ```
+
+`client/vercel.json` sudah me-rewrite `/api/*` ke project server. Untuk domain production saat ini, rewrite diarahkan ke:
+
+```text
+https://kma-sk-api.vercel.app/api
+```
+
+Jika nama project server berubah, update destination rewrite tersebut.
 
 Environment `server`:
 
@@ -103,6 +111,12 @@ CLOUDINARY_CLOUD_NAME=...
 CLOUDINARY_API_KEY=...
 CLOUDINARY_API_SECRET=...
 CLOUDINARY_UPLOAD_FOLDER=surat-kerjasama
+```
+
+`CLIENT_ORIGIN` harus sama persis dengan domain client yang membuka aplikasi, tanpa slash di belakang. Contoh:
+
+```bash
+CLIENT_ORIGIN=https://kma-sk-web.vercel.app
 ```
 
 Setelah environment server siap, jalankan migrasi database dari lokal dengan `.env` yang mengarah ke database cloud:
