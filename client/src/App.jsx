@@ -44,8 +44,14 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function compressCanvasImage(sourceCanvas, { maxSize = 720, quality = 0.7 } = {}) {
-  const ratio = Math.min(1, maxSize / Math.max(sourceCanvas.width, sourceCanvas.height));
+async function compressCanvasImage(
+  sourceCanvas,
+  { maxSize = 720, quality = 0.7 } = {},
+) {
+  const ratio = Math.min(
+    1,
+    maxSize / Math.max(sourceCanvas.width, sourceCanvas.height),
+  );
   const target = document.createElement("canvas");
   target.width = Math.max(1, Math.round(sourceCanvas.width * ratio));
   target.height = Math.max(1, Math.round(sourceCanvas.height * ratio));
@@ -375,7 +381,10 @@ function FaceCapture({ form, pendingFace, onPendingFace, setStatus }) {
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = await compressCanvasImage(canvas, { maxSize: 720, quality: 0.7 });
+    const imageData = await compressCanvasImage(canvas, {
+      maxSize: 720,
+      quality: 0.7,
+    });
     onPendingFace({
       imageData,
       consent,
@@ -384,8 +393,7 @@ function FaceCapture({ form, pendingFace, onPendingFace, setStatus }) {
     setStatus("Foto wajah siap. Tekan Submit untuk menyimpan ke database.");
   };
 
-  const displayedFace =
-    pendingFace?.imageData || assetUrl(form.faceImageUrl);
+  const displayedFace = pendingFace?.imageData || assetUrl(form.faceImageUrl);
 
   return (
     <section className="official-panel rounded-lg border border-line bg-white p-4 shadow-sm">
@@ -477,7 +485,7 @@ function Fill({ children }) {
 }
 
 function DocumentPreview({ data, pendingSignature, pendingFace }) {
-  const currentDate = today();
+  const currentDate = data.agreementDate || today();
   const made = splitDate(currentDate);
   const day = formatWeekday(currentDate);
 
@@ -589,9 +597,7 @@ function DocumentPreview({ data, pendingSignature, pendingFace }) {
           <div className="flex h-20 items-center justify-center">
             {(pendingSignature || data.signatureImageUrl) && (
               <img
-                src={
-                  pendingSignature || assetUrl(data.signatureImageUrl)
-                }
+                src={pendingSignature || assetUrl(data.signatureImageUrl)}
                 alt="Tanda tangan pihak kedua"
                 className="max-h-16 object-contain"
               />
@@ -634,11 +640,11 @@ function Article({ number, title, children }) {
   );
 }
 
-function PrintPanel() {
+function PrintPanel({ compact = false }) {
   return (
-    <div className="mt-4 flex justify-end">
+    <div className={`no-print ${compact ? "" : "mt-4"} flex justify-end`}>
       <button
-        className="btn-primary"
+        className="no-print btn-primary"
         type="button"
         onClick={() => window.print()}
       >
@@ -829,7 +835,6 @@ function AdminPage({
   search,
   setSearch,
   loadAdminData,
-  selectAgreement,
   deleteAgreement,
   reviewChangeRequest,
   logoutAdmin,
@@ -889,7 +894,6 @@ function AdminPage({
             search={search}
             setSearch={setSearch}
             loadAgreements={loadAdminData}
-            selectAgreement={selectAgreement}
             deleteAgreement={deleteAgreement}
           />
         )}
@@ -1020,13 +1024,28 @@ function AdminArchivePage({
   search,
   setSearch,
   loadAgreements,
-  selectAgreement,
   deleteAgreement,
 }) {
+  const [openedAgreement, setOpenedAgreement] = useState(null);
+
   const submitSearch = (event) => {
     event.preventDefault();
+    setOpenedAgreement(null);
     loadAgreements(search);
   };
+
+  if (openedAgreement) {
+    return (
+      <ArchiveAgreementDetail
+        agreement={openedAgreement}
+        onBack={() => setOpenedAgreement(null)}
+        onDelete={async () => {
+          const deleted = await deleteAgreement(openedAgreement.id);
+          if (deleted) setOpenedAgreement(null);
+        }}
+      />
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-5 py-5">
@@ -1080,7 +1099,7 @@ function AdminArchivePage({
                     <button
                       className="btn-secondary mr-2 h-9"
                       type="button"
-                      onClick={() => selectAgreement(item)}
+                      onClick={() => setOpenedAgreement(item)}
                     >
                       Buka
                     </button>
@@ -1109,6 +1128,162 @@ function AdminArchivePage({
   );
 }
 
+function ArchiveAgreementDetail({ agreement, onBack, onDelete }) {
+  return (
+    <main className="mx-auto max-w-6xl space-y-5 px-5 py-5">
+      <section className="official-panel rounded-lg border border-line bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-gold">
+              Detail Arsip
+            </p>
+            <h2 className="mt-1 text-lg font-black">{agreement.workerName}</h2>
+            <p className="text-sm text-slate-500">
+              {agreement.jobSection || "Bagian belum tercatat"} -{" "}
+              {formatDateLong(agreement.agreementDate)}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-secondary" type="button" onClick={onBack}>
+              <X size={16} />
+              Kembali
+            </button>
+            <button className="btn-secondary" type="button" onClick={onDelete}>
+              <Trash2 size={16} />
+              Hapus
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
+        <section className="min-w-0 overflow-auto rounded-lg border border-line bg-slate-200/70 p-5">
+          <DocumentPreview
+            data={agreement}
+            pendingSignature=""
+            pendingFace={null}
+          />
+          <PrintPanel />
+        </section>
+
+        <aside className="space-y-5">
+          <ArchiveVerificationCard agreement={agreement} />
+          <ArchiveCompletenessCard agreement={agreement} />
+        </aside>
+      </div>
+    </main>
+  );
+}
+
+function ArchiveVerificationCard({ agreement }) {
+  const signatureUrl = assetUrl(agreement.signatureImageUrl);
+  const faceUrl = assetUrl(agreement.faceImageUrl);
+
+  return (
+    <section className="official-panel rounded-lg border border-line bg-white p-5 shadow-sm">
+      <h3 className="text-sm font-black uppercase tracking-[0.08em] text-ink">
+        Hasil Verifikasi
+      </h3>
+      <div className="mt-4 space-y-4">
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-sm font-bold">Tanda Tangan</p>
+            <Status value={agreement.eSignatureStatus} />
+          </div>
+          {signatureUrl ? (
+            <img
+              src={signatureUrl}
+              alt="Tanda tangan pekerja"
+              className="h-28 w-full rounded-md border border-line bg-white object-contain p-3"
+            />
+          ) : (
+            <EmptyAsset label="TTD belum tersedia" />
+          )}
+        </div>
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-sm font-bold">Verifikasi Wajah</p>
+            <Status value={agreement.faceVerificationStatus} />
+          </div>
+          {faceUrl ? (
+            <img
+              src={faceUrl}
+              alt="Foto wajah pekerja"
+              className="aspect-[4/3] w-full rounded-md border border-line object-cover"
+            />
+          ) : (
+            <EmptyAsset label="Foto wajah belum tersedia" />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function EmptyAsset({ label }) {
+  return (
+    <div className="grid h-28 place-items-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-sm font-bold text-slate-500">
+      {label}
+    </div>
+  );
+}
+
+function ArchiveCompletenessCard({ agreement }) {
+  const rows = [
+    ["Nama pekerja", agreement.workerName],
+    ["Tempat lahir", agreement.workerBirthPlace],
+    ["Tanggal lahir", agreement.workerBirthDate],
+    ["Alamat", agreement.workerAddress],
+    ["No. KTP", agreement.workerKtp],
+    ["No. HP", agreement.workerPhone],
+    ["Bagian pekerjaan", agreement.jobSection],
+    ["Tanggal perjanjian", agreement.agreementDate],
+    [
+      "Tanda tangan",
+      agreement.signatureImageUrl || agreement.eSignatureStatus === "signed",
+    ],
+    [
+      "Foto wajah",
+      agreement.faceImageUrl || agreement.faceVerificationStatus === "captured",
+    ],
+  ];
+
+  const completed = rows.filter(([, value]) => Boolean(value)).length;
+
+  return (
+    <section className="official-panel rounded-lg border border-line bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-black uppercase tracking-[0.08em] text-ink">
+          Kelengkapan Data
+        </h3>
+        <span className="rounded-md bg-navy px-2 py-1 text-xs font-bold text-white">
+          {completed}/{rows.length}
+        </span>
+      </div>
+      <div className="mt-4 divide-y divide-line">
+        {rows.map(([label, value]) => (
+          <div
+            key={label}
+            className="flex items-center justify-between gap-3 py-2 text-sm"
+          >
+            <span className="text-slate-600">{label}</span>
+            <span
+              className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold ${
+                value
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {value ? <CheckCircle2 size={13} /> : <X size={13} />}
+              {value ? "Lengkap" : "Belum"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState(() => {
     if (window.location.pathname === "/admin") return "admin";
@@ -1122,12 +1297,13 @@ export default function App() {
   const [stats, setStats] = useState(null);
   const [adminUser, setAdminUser] = useState(null);
   const [adminTab, setAdminTab] = useState("dashboard");
-  const [selectedId, setSelectedId] = useState(null);
   const [pendingSignature, setPendingSignature] = useState("");
   const [pendingFace, setPendingFace] = useState(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [successDialog, setSuccessDialog] = useState(null);
 
   const canSubmit = useMemo(
     () =>
@@ -1139,11 +1315,6 @@ export default function App() {
       form.jobSection,
     [form],
   );
-
-  const hydrateAgreement = (agreement) => ({
-    ...agreement,
-    dailyWage: String(agreement.dailyWage || ""),
-  });
 
   const loadAdminData = async (query = search) => {
     setIsLoading(true);
@@ -1198,10 +1369,10 @@ export default function App() {
   };
 
   const resetForm = () => {
-    setSelectedId(null);
     setPendingSignature("");
     setPendingFace(null);
     setForm({ ...defaultAgreement, ...companyDefaults });
+    setIsPreviewOpen(false);
     setPage("form");
     window.history.pushState({}, "", "/");
     setStatus("Form baru siap diisi.");
@@ -1226,9 +1397,7 @@ export default function App() {
         signatureDate: currentDate,
         notes: "",
       };
-      let saved = selectedId
-        ? await api.updateAgreement(selectedId, payload)
-        : await api.createAgreement(payload);
+      let saved = await api.createAgreement(payload);
       if (pendingSignature) {
         const signatureResult = await api.saveDigitalSignature(
           saved.id,
@@ -1242,9 +1411,16 @@ export default function App() {
         saved = faceResult.agreement;
         setPendingFace(null);
       }
-      setSelectedId(saved.id);
-      setForm(hydrateAgreement(saved));
-      setStatus("Data perjanjian berhasil disubmit.");
+      setPendingSignature("");
+      setPendingFace(null);
+      setForm({ ...defaultAgreement, ...companyDefaults });
+      setIsPreviewOpen(false);
+      setSuccessDialog({
+        title: "Data berhasil disubmit",
+        message:
+          "Perjanjian kerja harian lepas berhasil tersimpan dan masuk ke arsip admin.",
+      });
+      setStatus("");
       return saved.id;
     } catch (error) {
       setStatus(error.message);
@@ -1254,35 +1430,22 @@ export default function App() {
     }
   };
 
-  const applySavedAgreement = (agreement) => {
-    setSelectedId(agreement.id);
-    setPendingSignature("");
-    setPendingFace(null);
-    setForm(hydrateAgreement(agreement));
-  };
-
-  const selectAgreement = (item) => {
-    applySavedAgreement(item);
-    setPage("form");
-    window.history.pushState({}, "", "/");
-    setStatus(`Membuka data ${item.workerName}.`);
-  };
-
   const deleteAgreement = async (id) => {
     const target = agreements.find((item) => item.id === id);
     const confirmed = window.confirm(
       `Hapus perjanjian ${target?.workerName || "ini"}? Data yang dihapus tidak dapat dikembalikan.`,
     );
-    if (!confirmed) return;
+    if (!confirmed) return false;
 
     setIsLoading(true);
     try {
       await api.deleteAgreement(id);
-      if (selectedId === id) resetForm();
       await loadAdminData();
       setStatus("Data berhasil dihapus.");
+      return true;
     } catch (error) {
       setStatus(error.message);
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -1295,8 +1458,9 @@ export default function App() {
       // Session may already be gone.
     }
     setAdminUser(null);
-    setPage("form");
-    window.history.pushState({}, "", "/");
+    setPage("admin-login");
+    window.history.pushState({}, "", "/admin");
+    setStatus("Anda sudah keluar dari admin.");
   };
 
   const reviewChangeRequest = async (id, reviewStatus) => {
@@ -1316,7 +1480,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-mist text-ink">
-      <header className="sticky top-0 z-20 border-b border-navy/15 bg-white/95 shadow-sm backdrop-blur">
+      <header className="no-print sticky top-0 z-20 border-b border-navy/15 bg-white/95 shadow-sm backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-5 py-3">
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 place-items-center rounded-lg bg-navy text-white shadow-sm">
@@ -1352,10 +1516,33 @@ export default function App() {
       </header>
 
       {status && (
-        <div className="mx-auto mt-4 max-w-[1500px] px-5">
+        <div className="no-print mx-auto mt-4 max-w-[1500px] px-5">
           <div className="rounded-lg border border-amber/30 bg-amber/10 p-3 text-sm text-amber-900">
             {status}
           </div>
+        </div>
+      )}
+
+      {successDialog && (
+        <div className="no-print fixed inset-0 z-50 grid place-items-center bg-ink/45 px-5 backdrop-blur-sm">
+          <section className="w-full max-w-md rounded-lg border border-line bg-white p-5 text-center shadow-xl">
+            <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-emerald-700">
+              <CheckCircle2 size={24} />
+            </span>
+            <h2 className="mt-4 text-lg font-black text-ink">
+              {successDialog.title}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {successDialog.message}
+            </p>
+            <button
+              className="btn-primary mt-5 w-full justify-center"
+              type="button"
+              onClick={() => setSuccessDialog(null)}
+            >
+              Tutup
+            </button>
+          </section>
         </div>
       )}
 
@@ -1376,7 +1563,6 @@ export default function App() {
           search={search}
           setSearch={setSearch}
           loadAdminData={loadAdminData}
-          selectAgreement={selectAgreement}
           deleteAgreement={deleteAgreement}
           reviewChangeRequest={reviewChangeRequest}
           logoutAdmin={logoutAdmin}
@@ -1384,7 +1570,7 @@ export default function App() {
       ) : page === "change-request" ? (
         <ChangeRequestPage setPage={setPage} setStatus={setStatus} />
       ) : (
-        <main className="mx-auto grid max-w-[1500px] gap-5 px-5 py-5 lg:grid-cols-[minmax(420px,640px)_1fr]">
+        <main className="mx-auto grid max-w-[1500px] gap-5 px-5 pb-28 pt-5 lg:grid-cols-[minmax(420px,640px)_1fr] lg:pb-5">
           <section className="min-w-0 space-y-4">
             <section className="rounded-lg border border-navy/15 bg-navy px-5 py-4 text-white shadow-sm">
               <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold">
@@ -1424,7 +1610,7 @@ export default function App() {
               Submit
             </button>
           </section>
-          <section className="min-w-0 overflow-auto rounded-lg border border-line bg-slate-200/70 p-5">
+          <section className="hidden min-w-0 overflow-auto rounded-lg border border-line bg-slate-200/70 p-5 lg:block">
             <DocumentPreview
               data={form}
               pendingSignature={pendingSignature}
@@ -1432,6 +1618,36 @@ export default function App() {
             />
             <PrintPanel />
           </section>
+          <button
+            className="btn-primary fixed bottom-4 left-4 right-4 z-30 h-12 justify-center shadow-xl lg:hidden"
+            type="button"
+            onClick={() => setIsPreviewOpen(true)}
+          >
+            <FileText size={16} />
+            Preview Surat
+          </button>
+          {isPreviewOpen && (
+            <div className="fixed inset-0 z-40 flex flex-col bg-mist lg:hidden">
+              <div className="flex items-center justify-between border-b border-line bg-white px-4 py-3 shadow-sm">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => setIsPreviewOpen(false)}
+                >
+                  <X size={16} />
+                  Kembali
+                </button>
+                <PrintPanel compact />
+              </div>
+              <div className="flex-1 overflow-auto bg-slate-200/70 p-4">
+                <DocumentPreview
+                  data={form}
+                  pendingSignature={pendingSignature}
+                  pendingFace={pendingFace}
+                />
+              </div>
+            </div>
+          )}
         </main>
       )}
     </div>
