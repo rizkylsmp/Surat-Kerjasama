@@ -13,6 +13,7 @@ import {
   Save,
   Search,
   Trash2,
+  Upload,
   Users,
   UserRound,
   X,
@@ -44,6 +45,24 @@ function blobToDataUrl(blob) {
   });
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
 async function compressCanvasImage(
   sourceCanvas,
   { maxSize = 720, quality = 0.7 } = {},
@@ -65,6 +84,20 @@ async function compressCanvasImage(
     blob = await canvasToBlob(target, "image/jpeg", 0.72);
   }
   return blobToDataUrl(blob);
+}
+
+async function compressImageFile(file, options = {}) {
+  if (!file?.type?.startsWith("image/")) {
+    throw new Error("Pilih berkas gambar dengan format PNG, JPG, JPEG, atau WebP.");
+  }
+
+  const imageData = await fileToDataUrl(file);
+  const image = await loadImage(imageData);
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = image.naturalWidth || image.width;
+  sourceCanvas.height = image.naturalHeight || image.height;
+  sourceCanvas.getContext("2d").drawImage(image, 0, 0);
+  return compressCanvasImage(sourceCanvas, options);
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -287,6 +320,24 @@ function SignaturePad({
     setStatus(readyMessage);
   };
 
+  const uploadSignatureFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const imageData = await compressImageFile(file, {
+        maxSize: 1200,
+        quality: 0.82,
+      });
+      onPendingSignature(imageData);
+      setStatus(readyMessage);
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const displayedSignature =
     pendingSignature || assetUrl(form.signatureImageUrl);
 
@@ -325,6 +376,16 @@ function SignaturePad({
           <X size={16} />
           Bersihkan
         </button>
+        <label className="btn-secondary cursor-pointer">
+          <Upload size={16} />
+          Upload TTD
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp"
+            className="hidden"
+            onChange={uploadSignatureFile}
+          />
+        </label>
         <button className="btn-primary" type="button" onClick={saveLocal}>
           <Save size={16} />
           Siapkan TTD
@@ -400,6 +461,33 @@ function FaceCapture({
     setStatus(readyMessage);
   };
 
+  const uploadFaceFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      if (!consent) {
+        setStatus("Centang persetujuan penyimpanan data wajah terlebih dahulu.");
+        return;
+      }
+
+      const imageData = await compressImageFile(file, {
+        maxSize: 720,
+        quality: 0.7,
+      });
+      onPendingFace({
+        imageData,
+        consent,
+        captureNote: "Uploaded from local device",
+      });
+      setStatus(readyMessage);
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const displayedFace = pendingFace?.imageData || assetUrl(form.faceImageUrl);
 
   return (
@@ -451,6 +539,16 @@ function FaceCapture({
           <Camera size={16} />
           {isCameraOn ? "Matikan Kamera" : "Aktifkan Kamera"}
         </button>
+        <label className="btn-secondary cursor-pointer">
+          <Upload size={16} />
+          Upload Foto
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp"
+            className="hidden"
+            onChange={uploadFaceFile}
+          />
+        </label>
         <button
           className="btn-primary"
           type="button"
